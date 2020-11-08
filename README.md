@@ -8,7 +8,7 @@ This is the implementation for the paper: Sequential Recommender System based on
 - pandas=0.24.1
 
 ## Datasets
-The datasets are the same as TLSAN.
+The raw data are the same as TLSAN.
 
 ## How to run the codes
 Build dataset:
