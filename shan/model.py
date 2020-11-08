@@ -25,20 +25,18 @@ class Model(object):
 
 
     def init_placeholders(self):
-        # [bs] user id
+        # [B] user id
         self.u = tf.placeholder(tf.int32, [None,])
 
-        # [bs] item id
-        self.i = tf.placeholder(tf.int32, [None,])
+        # [B] item id
+        self.pos = tf.placeholder(tf.int32, [None,])
+        self.neg = tf.placeholder(tf.int32, [None,])
 
-        # [bs] item label
-        self.y = tf.placeholder(tf.float32, [None,])
-
-        # [bs, sl] history item id
+        # [B, T] history item id
         self.hist_i = tf.placeholder(tf.int32, [None, None])
         self.hist_i_new = tf.placeholder(tf.int32, [None, None])
 
-        # [bs] valid length of `hist_i`
+        # [B] valid length of `hist_i`
         self.sl = tf.placeholder(tf.int32, [None,])
         self.sl_new = tf.placeholder(tf.int32, [None,])
 
@@ -54,10 +52,6 @@ class Model(object):
         item_emb = tf.get_variable(
             "item_emb", 
             [self.config['item_count'], self.config['embedding_size']])
-        item_b = tf.get_variable(
-            "item_b",
-            [self.config['item_count'],],
-            initializer=tf.constant_initializer(0.0))
         # user ID embedding
         user_emb = tf.get_variable(
             "user_emb", 
@@ -78,8 +72,8 @@ class Model(object):
 
 
         # item embedding
-        i_emb = tf.nn.embedding_lookup(item_emb, self.i)
-        i_b = tf.gather(item_b, self.i)
+        pos_emb = tf.nn.embedding_lookup(item_emb, self.pos)
+        neg_emb = tf.nn.embedding_lookup(item_emb, self.neg)
 
         # user embedding
         u_emb = tf.nn.embedding_lookup(user_emb, self.u)
@@ -101,11 +95,12 @@ class Model(object):
             layer2_b=layer2_b, 
             reuse=False)
 
-        self.logits = tf.reduce_sum(tf.multiply(u_hybrid, i_emb), -1) + i_b
+        self.logits = tf.reduce_sum(tf.multiply(u_hybrid, pos_emb), -1)
+        self.neg_logits = tf.reduce_sum(tf.multiply(u_hybrid, neg_emb), -1)
 
         # Eval
-        self.eval_logits = tf.matmul(u_hybrid, item_emb, transpose_b=True) + item_b
-        self.i64 = tf.cast(self.i, tf.int64)
+        self.eval_logits = tf.matmul(u_hybrid, item_emb, transpose_b=True)
+        self.i64 = tf.cast(self.pos, tf.int64)
         with tf.variable_scope("metric"):
             # precision_at_k
             self.prec_1, self.prec_update_1 = tf.metrics.precision_at_k(labels=self.i64, predictions=self.eval_logits, k=1)
@@ -128,15 +123,18 @@ class Model(object):
         self.global_epoch_step_op = tf.assign(self.global_epoch_step, self.global_epoch_step+1)
         
         # loss
-        l2_norm = tf.add_n([
+        l2_norm_uv = tf.add_n([
             tf.nn.l2_loss(user_emb),
             tf.nn.l2_loss(item_emb),
+        ])
+        l2_norm_a = tf.add_n([
             tf.nn.l2_loss(layer1_w),
             tf.nn.l2_loss(layer2_w),
         ])
 
-        self.loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(logits=self.logits, labels=self.y))\
-             + self.config['regulation_rate'] * l2_norm
+        # self.loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(logits=self.logits, labels=self.y))\
+        self.loss = tf.reduce_mean(-tf.log(tf.nn.sigmoid(self.logits - self.neg_logits))) \
+             + self.config['regulation_rate_uv'] * l2_norm_uv + self.config['regulation_rate_a'] * l2_norm_a
 
         self.train_summary = tf.summary.merge([
             tf.summary.histogram('embedding/1_item_emb', item_emb),
@@ -174,8 +172,8 @@ class Model(object):
 
         input_feed = {
             self.u: batch[0],
-            self.i: batch[1],
-            self.y: batch[2],
+            self.pos: batch[1],
+            self.neg: batch[2], 
             self.hist_i: batch[3],
             self.hist_i_new: batch[4],
             self.sl: batch[5],
@@ -201,7 +199,7 @@ class Model(object):
         #positive_item_list
         res1 = sess.run(self.logits, feed_dict={
             self.u: batch[0],
-            self.i: batch[1],
+            self.pos: batch[1],
             self.hist_i: batch[3],
             self.hist_i_new: batch[4],
             self.sl: batch[5],
@@ -209,9 +207,9 @@ class Model(object):
             self.is_training: False,
         })
         #negative_item_list
-        res2 = sess.run(self.logits, feed_dict={
+        res2 = sess.run(self.neg_logits, feed_dict={
             self.u: batch[0],
-            self.i: batch[2],
+            self.neg: batch[2],
             self.hist_i: batch[3],
             self.hist_i_new: batch[4],
             self.sl: batch[5],
@@ -229,7 +227,7 @@ class Model(object):
 
         return sess.run(prec_update_ops, feed_dict={ 
             self.u: batch[0],
-            self.i: batch[1],
+            self.pos: batch[1],
             self.hist_i: batch[3],
             self.hist_i_new: batch[4],
             self.sl: batch[5],
@@ -245,7 +243,7 @@ class Model(object):
 
         return sess.run(recall_update_ops, feed_dict={ 
             self.u: batch[0],
-            self.i: batch[1],
+            self.pos: batch[1],
             self.hist_i: batch[3],
             self.hist_i_new: batch[4],
             self.sl: batch[5],

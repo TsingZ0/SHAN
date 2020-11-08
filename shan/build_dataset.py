@@ -6,8 +6,8 @@ import copy
 max_length = 90
 random.seed(1234)
 
-with open('../Data/remap.pkl', 'rb') as f:
-    reviews_df = pickle.load(f)
+with open('../Data/Electronics.pkl', 'rb') as f:
+    reviews_df, meta_df = pickle.load(f)
     item_cate_list = pickle.load(f)
     user_count, item_count, cate_count, example_count = pickle.load(f)
     
@@ -39,8 +39,8 @@ for reviewerID, hist in reviews_df.groupby('reviewerID'):
         else:
             if i+count < valid_length-1:
                 pre_session_copy = copy.deepcopy(pre_session)
-                train_set.append((reviewerID, pre_session_copy, new_session, pos_list[i+count], 1))
-                train_set.append((reviewerID, pre_session_copy, new_session, neg_list[i+count], 0))
+                pos_neg = (pos_list[i+count], neg_list[i+count])
+                train_set.append((reviewerID, pre_session_copy, new_session, pos_neg))
                 pre_session.extend(new_session)
             else:
                 pos_item = pos_list[i]

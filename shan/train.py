@@ -9,20 +9,24 @@ from collections import OrderedDict
 import numpy as np
 import tensorflow as tf
 
-from input import DataInput, DataInputTest
+from input import DataInput
 from model import Model
 
 random.seed(1234)
 np.random.seed(1234)
 tf.set_random_seed(1234)
 logging.disable(logging.WARNING)
-# os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
+os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
+
+time_line = []
+auc_value = []
 
 
 # pylint: disable=line-too-long
 # Network parameters
 tf.app.flags.DEFINE_float('dropout', 0.0, 'Dropout probability(0.0: no dropout)')
-tf.app.flags.DEFINE_float('regulation_rate', 0.00000, 'L2 regulation rate')
+tf.app.flags.DEFINE_float('regulation_rate_uv', 0.00005, 'L2 regulation rate')
+tf.app.flags.DEFINE_float('regulation_rate_a', 0.00005, 'L2 regulation rate')
 
 tf.app.flags.DEFINE_integer('embedding_size', 32, 'User and item id feature size')
 
@@ -35,14 +39,14 @@ tf.app.flags.DEFINE_float('max_gradient_norm', 5.0, 'Clip gradients to this norm
 
 tf.app.flags.DEFINE_integer('train_batch_size', 32, 'Training Batch size')
 tf.app.flags.DEFINE_integer('test_batch_size', 32, 'Testing Batch size')
-tf.app.flags.DEFINE_integer('max_epochs', 20, 'Maximum # of training epochs')
+tf.app.flags.DEFINE_integer('max_epochs', 40, 'Maximum # of training epochs')
 
 tf.app.flags.DEFINE_integer('display_freq', 100, 'Display training status every this iteration')
 tf.app.flags.DEFINE_integer('eval_freq', 1000, 'Display training status every this iteration')
 
 
 # Runtime parameters
-tf.app.flags.DEFINE_string('cuda_visible_devices', '1', 'Choice which GPU to use')
+tf.app.flags.DEFINE_string('cuda_visible_devices', '3', 'Choice which GPU to use')
 tf.app.flags.DEFINE_float('per_process_gpu_memory_fraction', 0.0, 'Gpu memory use fraction, 0.0 for allow_growth=True')
 # pylint: enable=line-too-long
 
@@ -77,7 +81,7 @@ def create_model(sess, config):
 
 def eval_auc(sess, test_set, model):
   auc_sum = 0.0
-  for _, batch in DataInputTest(test_set, FLAGS.test_batch_size):
+  for _, batch in DataInput(test_set, FLAGS.test_batch_size):
     auc_sum += model.eval_auc(sess, batch) * len(batch[0])
   res = auc_sum / len(test_set)
   model.eval_writer.add_summary(
@@ -88,13 +92,13 @@ def eval_auc(sess, test_set, model):
   return res
 
 def eval_prec(sess, test_set, model):
-  for _, batch in DataInputTest(test_set, FLAGS.test_batch_size):
+  for _, batch in DataInput(test_set, FLAGS.test_batch_size):
     model.eval_prec(sess, batch)
   prec = sess.run([model.prec_1, model.prec_10, model.prec_20, model.prec_30, model.prec_40, model.prec_50])
   return prec
 
 def eval_recall(sess, test_set, model):
-  for _, batch in DataInputTest(test_set, FLAGS.test_batch_size):
+  for _, batch in DataInput(test_set, FLAGS.test_batch_size):
     model.eval_recall(sess, batch)
   recall = sess.run([model.recall_1, model.recall_10, model.recall_20, model.recall_30, model.recall_40, model.recall_50])
   return recall
@@ -176,6 +180,10 @@ def train():
 
         if model.global_step.eval() % FLAGS.eval_freq == 0:
           test_auc = eval_auc(sess, test_set, model)
+          
+          time_line.append(time.time()-start_time)
+          auc_value.append(test_auc)
+
           print('Epoch %d Global_step %d\tTrain_loss: %.4f\tEval_auc: %.4f\t' %
                 (model.global_epoch_step.eval(), model.global_step.eval(),
                  avg_loss / FLAGS.eval_freq, test_auc),
@@ -198,7 +206,7 @@ def train():
               best_prec[i] = prec[i]
             if recall[i] > best_recall[i]:
               best_recall[i] = recall[i]
-          if test_auc > 0.8 and test_auc > best_auc:
+          if test_auc > 0.7 and test_auc > best_auc:
             best_auc = test_auc
             model.save(sess)
 
@@ -224,6 +232,8 @@ def train():
 
 def main(_):
   train()
+  with open('training_time.pkl', 'wb') as f:
+    pickle.dump((time_line, auc_value), f, pickle.HIGHEST_PROTOCOL)
 
 if __name__ == '__main__':
   tf.app.run()
