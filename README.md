@@ -2,10 +2,10 @@
 This is the implementation for the paper: Sequential Recommender System based on Hierarchical Attention Network
 
 ## Environments
-- Python >= 3.5
-- Tensorflow 1.8.0
-- numpy
-- pandas
+- Python=3.5
+- Tensorflow=1.8.0
+- numpy=1.14.2
+- pandas=0.24.1
 
 ## Datasets
 The datasets are the same as TLSAN.
